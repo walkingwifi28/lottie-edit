@@ -1,6 +1,9 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import lottie from 'lottie-web';
 import type { AnimationItem } from 'lottie-web';
+import TextEditor from './TextEditor';
+import { extractTextLayers } from '../utils/lottieTextUtils';
+import type { TextLayerInfo } from '../types/lottie';
 
 interface LottieJSON {
   v?: string;
@@ -34,6 +37,7 @@ const LottieAnimation = () => {
   const [animationData, setAnimationData] = useState<LottieJSON | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [textLayers, setTextLayers] = useState<TextLayerInfo[]>([]);
 
   useEffect(() => {
     if (animationRef.current) {
@@ -49,6 +53,10 @@ const LottieAnimation = () => {
         autoplay: true,
         animationData: animationData,
       });
+
+      // テキストレイヤーを抽出
+      const layers = extractTextLayers(animationData);
+      setTextLayers(layers);
     }
 
     return () => {
@@ -134,41 +142,64 @@ const LottieAnimation = () => {
     fileInputRef.current?.click();
   }, []);
 
+  const handleUpdateText = useCallback((layerIndex: number, newText: string) => {
+    if (animationRef.current) {
+      // lottie-webのupdateDocumentData APIを使用してテキストを更新
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (animationRef.current as any).renderer.elements[layerIndex]?.updateDocumentData({ t: newText }, 0);
+
+      // textLayersのstateも更新
+      setTextLayers((prev) =>
+        prev.map((layer) =>
+          layer.index === layerIndex ? { ...layer, text: newText } : layer
+        )
+      );
+    }
+  }, []);
+
   return (
-    <div
-      className="drop-zone"
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json"
-        onChange={handleFileSelect}
-        style={{ display: 'none' }}
-      />
+    <div className="app-container">
+      <div
+        className="drop-zone"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          onChange={handleFileSelect}
+          style={{ display: 'none' }}
+        />
 
-      {animationData ? (
-        <div ref={containerRef} id="lottie" />
-      ) : (
-        <div className="drop-hint">
-          <p>Lottie JSONファイルをドロップ</p>
-          <p>または</p>
-          <button className="file-select-btn" onClick={handleButtonClick}>
-            ファイルを選択
-          </button>
+        {animationData ? (
+          <div ref={containerRef} id="lottie" />
+        ) : (
+          <div className="drop-hint">
+            <p>Lottie JSONファイルをドロップ</p>
+            <p>または</p>
+            <button className="file-select-btn" onClick={handleButtonClick}>
+              ファイルを選択
+            </button>
+          </div>
+        )}
+
+        {isDragging && (
+          <div className="drop-overlay">
+            <p>ここにドロップ</p>
+          </div>
+        )}
+
+        {error && <div className="error-toast">{error}</div>}
+      </div>
+
+      {animationData && (
+        <div className="side-panel">
+          <TextEditor textLayers={textLayers} onUpdateText={handleUpdateText} />
         </div>
       )}
-
-      {isDragging && (
-        <div className="drop-overlay">
-          <p>ここにドロップ</p>
-        </div>
-      )}
-
-      {error && <div className="error-toast">{error}</div>}
     </div>
   );
 };
