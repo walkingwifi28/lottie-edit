@@ -33,6 +33,35 @@ const isValidLottieJSON = (data: unknown): data is LottieJSON => {
 };
 
 const cloneLottieJSON = <T,>(data: T): T => JSON.parse(JSON.stringify(data)) as T;
+const isDataUrl = (value: string): boolean => value.startsWith('data:');
+
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('画像データの変換に失敗しました'));
+    };
+    reader.onerror = () => reject(new Error('画像データの変換に失敗しました'));
+    reader.readAsDataURL(blob);
+  });
+
+const resolveAssetUrl = (assetPath: string, assetBasePath: string): string | null => {
+  if (isDataUrl(assetPath)) return assetPath;
+  if (/^https?:\/\//i.test(assetPath)) return assetPath;
+
+  if (!assetBasePath) return null;
+
+  try {
+    const baseUrl = new URL(assetBasePath, window.location.href);
+    return new URL(assetPath, baseUrl).toString();
+  } catch {
+    return null;
+  }
+};
 
 const getImageSizeFromDataUrl = (dataUrl: string): Promise<{ width: number; height: number }> =>
   new Promise((resolve, reject) => {
@@ -75,6 +104,43 @@ const createContainedImageDataUrl = async (
 const toValidNumber = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
+const embedAllImageAssets = async (sourceData: LottieJSON): Promise<LottieJSON> => {
+  const updatedData = cloneLottieJSON(sourceData);
+  const assets = Array.isArray(updatedData.assets)
+    ? (updatedData.assets as Array<Record<string, unknown>>)
+    : [];
+
+  for (const asset of assets) {
+    const assetPath = typeof asset.p === 'string' ? asset.p : null;
+    if (!assetPath) continue;
+
+    if (isDataUrl(assetPath)) {
+      asset.u = '';
+      asset.e = 1;
+      continue;
+    }
+
+    const basePath = typeof asset.u === 'string' ? asset.u : '';
+    const resolvedUrl = resolveAssetUrl(assetPath, basePath);
+    if (!resolvedUrl) {
+      throw new Error('埋め込みできない画像アセットがあります（相対パスを解決できません）');
+    }
+
+    const response = await fetch(resolvedUrl);
+    if (!response.ok) {
+      throw new Error('画像アセットの取得に失敗しました');
+    }
+
+    const blob = await response.blob();
+    const embeddedDataUrl = await blobToDataUrl(blob);
+    asset.p = embeddedDataUrl;
+    asset.u = '';
+    asset.e = 1;
+  }
+
+  return updatedData;
+};
+
 const LottieAnimation = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<AnimationItem | null>(null);
@@ -87,6 +153,8 @@ const LottieAnimation = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedImageAssetIndex, setSelectedImageAssetIndex] = useState<number | null>(null);
   const [animationKey, setAnimationKey] = useState(0);
+  const [sourceFileName, setSourceFileName] = useState<string>('animation.json');
+  const [isExporting, setIsExporting] = useState(false);
 
   const textLayers = useMemo<TextLayerInfo[]>(
     () => (animationData ? extractTextLayers(animationData) : []),
@@ -193,6 +261,7 @@ const LottieAnimation = () => {
           animationDataRef.current = json;
           setAnimationData(json);
           setSelectedImageAssetIndex(null);
+          setSourceFileName(file.name);
           setError(null);
         } else {
           setError('有効なLottie JSONファイルではありません');
@@ -377,6 +446,41 @@ const LottieAnimation = () => {
     }
   }, [activeImageAssetIndex, animationData]);
 
+  const handleExportFile = useCallback(async () => {
+    const sourceData = animationDataRef.current ?? animationData;
+    if (!sourceData) {
+      setError('出力対象のJSONがありません');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const embeddedData = await embedAllImageAssets(sourceData);
+      animationDataRef.current = embeddedData;
+      setAnimationKey((prev) => prev + 1);
+      setAnimationData(embeddedData);
+
+      const outputNameBase = sourceFileName.replace(/\.json$/i, '') || 'animation';
+      const outputName = `${outputNameBase}-edited-embedded.json`;
+      const blob = new Blob([JSON.stringify(embeddedData, null, 2)], {
+        type: 'application/json',
+      });
+      const downloadUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = outputName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(downloadUrl);
+      setError(null);
+    } catch {
+      setError('画像埋め込み付きの出力に失敗しました');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [animationData, sourceFileName]);
+
   return (
     <div className="app-container">
       <div
@@ -446,6 +550,13 @@ const LottieAnimation = () => {
             ) : (
               <p className="no-layers">画像アセットが見つかりません</p>
             )}
+            <button
+              className="file-select-btn export-btn"
+              onClick={handleExportFile}
+              disabled={isExporting}
+            >
+              {isExporting ? '出力中...' : '編集後JSONを書き出し（画像埋め込み）'}
+            </button>
           </div>
           <TextEditor textLayers={textLayers} onUpdateText={handleUpdateText} />
           <ColorEditor colorLayers={colorLayers} onUpdateColor={handleUpdateColor} />

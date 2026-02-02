@@ -158,6 +158,21 @@
   margin-top: 0;
 }
 
+.export-btn {
+  width: 100%;
+  margin-top: 10px;
+  background-color: #ff7a18;
+}
+
+.export-btn:hover {
+  background-color: #e16409;
+}
+
+.export-btn:disabled {
+  cursor: not-allowed;
+  background-color: #f3b483;
+}
+
 /* Text Editor */
 .text-editor {
   padding: 20px;

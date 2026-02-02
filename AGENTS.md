@@ -70,6 +70,11 @@ src/
 - 画像レイヤー（`ty: 2`）の transform（位置/アンカー/スケール）は変更しない
 - JSON更新後にアニメーションを再ロードして即時反映
 
+### 6. 編集後JSONのファイル出力（LottieAnimation.tsx）
+- サイドパネルから「編集後JSONを書き出し（画像埋め込み）」を実行可能
+- 出力時に全画像アセットをData URL化し、`asset.u = ''` / `asset.e = 1` に正規化
+- ダウンロード名は元ファイル名ベースで `*-edited-embedded.json`
+
 ## 型定義
 
 ```typescript
@@ -123,5 +128,6 @@ pnpm preview  # ビルド結果プレビュー
 - テキスト色の更新も `updateDocumentData({ fc: [r, g, b] })` で即時反映
 - シェイプ/ソリッドの色更新はJSON編集後にアニメーション再ロードが必要
 - 画像差し替えは `assets[n].p` をData URL化し、`assets[n].e = 1` にして再ロード
+- JSON出力時も画像アセットをData URL化して埋め込み状態を保証してからダウンロード
 - 画像差し替え時は元アセットの `w/h` を維持したまま `assets` の画像データのみ更新し、画像レイヤーの transform（位置/アンカー/スケール）は変更しない
 - 日本語UIを使用
