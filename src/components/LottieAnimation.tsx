@@ -165,13 +165,30 @@ const LottieAnimation = () => {
     [animationData]
   );
   const imageAssetIndices = useMemo<number[]>(
-    () =>
-      (animationData?.assets ?? [])
-        .map((asset, index) => {
-          const item = asset as Record<string, unknown>;
-          return typeof item.p === 'string' ? index : -1;
-        })
-        .filter((index) => index >= 0),
+    () => {
+      const assets = (animationData?.assets ?? []) as Array<Record<string, unknown>>;
+      const layers = (animationData?.layers ?? []) as Array<Record<string, unknown>>;
+
+      const imageAssetIndexById = new Map<string, number>();
+      assets.forEach((asset, index) => {
+        if (typeof asset.p !== 'string') return;
+        if (typeof asset.id !== 'string') return;
+        imageAssetIndexById.set(asset.id, index);
+      });
+
+      const usedAssetIndices = new Set<number>();
+      layers.forEach((layer) => {
+        if (layer.ty !== 2) return;
+        if (layer.hd === true) return;
+        if (typeof layer.refId !== 'string') return;
+        const assetIndex = imageAssetIndexById.get(layer.refId);
+        if (assetIndex !== undefined) {
+          usedAssetIndices.add(assetIndex);
+        }
+      });
+
+      return [...usedAssetIndices].sort((a, b) => a - b);
+    },
     [animationData]
   );
   const activeImageAssetIndex = useMemo<number | null>(() => {
@@ -548,7 +565,7 @@ const LottieAnimation = () => {
                 </button>
               </>
             ) : (
-              <p className="no-layers">画像アセットが見つかりません</p>
+              <p className="no-layers">使用中の画像アセットが見つかりません</p>
             )}
             <button
               className="file-select-btn export-btn"

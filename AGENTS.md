@@ -62,7 +62,7 @@ src/
 - リアルタイムでアニメーションに反映
 
 ### 5. 画像差し替え（LottieAnimation.tsx）
-- `assets` 内の画像アセット（`p` を持つ要素）を検出
+- `layers` の画像レイヤー（`ty: 2` かつ `hd !== true`）が参照する `refId` と `assets[].id` を突き合わせ、表示中の画像アセットのみを検出
 - サイドパネルから差し替え対象の画像アセットを選択
 - 画像ファイル選択でData URLに変換し、`asset.p` に埋め込み
 - `asset.u = ''` / `asset.e = 1` に更新して外部ファイル依存を排除
@@ -127,7 +127,7 @@ pnpm preview  # ビルド結果プレビュー
 - テキスト更新は `renderer.elements[index].updateDocumentData()` を使用
 - テキスト色の更新も `updateDocumentData({ fc: [r, g, b] })` で即時反映
 - シェイプ/ソリッドの色更新はJSON編集後にアニメーション再ロードが必要
-- 画像差し替えは `assets[n].p` をData URL化し、`assets[n].e = 1` にして再ロード
+- 画像差し替え対象は `layer.ty === 2` かつ `layer.hd !== true` の `refId` と一致する `assets[n]` のみを表示し、`assets[n].p` をData URL化して `assets[n].e = 1` にして再ロード
 - JSON出力時も画像アセットをData URL化して埋め込み状態を保証してからダウンロード
 - 画像差し替え時は元アセットの `w/h` を維持したまま `assets` の画像データのみ更新し、画像レイヤーの transform（位置/アンカー/スケール）は変更しない
 - 日本語UIを使用
