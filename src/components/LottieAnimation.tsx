@@ -2,8 +2,10 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import lottie from 'lottie-web';
 import type { AnimationItem } from 'lottie-web';
 import TextEditor from './TextEditor';
+import ColorEditor from './ColorEditor';
 import { extractTextLayers } from '../utils/lottieTextUtils';
-import type { TextLayerInfo } from '../types/lottie';
+import { extractAllColors, updateColorInJson } from '../utils/lottieColorUtils';
+import type { TextLayerInfo, ColorLayerInfo, LottieRGBA } from '../types/lottie';
 
 interface LottieJSON {
   v?: string;
@@ -29,34 +31,76 @@ const isValidLottieJSON = (data: unknown): data is LottieJSON => {
   );
 };
 
+const cloneLottieJSON = <T,>(data: T): T => JSON.parse(JSON.stringify(data)) as T;
+
 const LottieAnimation = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<AnimationItem | null>(null);
+  const animationDataRef = useRef<LottieJSON | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [animationData, setAnimationData] = useState<LottieJSON | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [textLayers, setTextLayers] = useState<TextLayerInfo[]>([]);
+  const [colorLayers, setColorLayers] = useState<ColorLayerInfo[]>([]);
+  const [animationKey, setAnimationKey] = useState(0);
 
   useEffect(() => {
+    if (animationData) {
+      animationDataRef.current = animationData;
+    }
+
+    // コンテナのサイズを保持してレイアウトシフトを防ぐ（破棄前に取得）
+    const container = containerRef.current;
+    let prevWidth = 0;
+    let prevHeight = 0;
+    if (container) {
+      prevWidth = container.offsetWidth;
+      prevHeight = container.offsetHeight;
+    }
+
     if (animationRef.current) {
       animationRef.current.destroy();
       animationRef.current = null;
     }
 
-    if (containerRef.current && animationData) {
+    if (container && animationData) {
+      // 破棄前に取得したサイズを設定
+      if (prevWidth > 0 && prevHeight > 0) {
+        container.style.minWidth = `${prevWidth}px`;
+        container.style.minHeight = `${prevHeight}px`;
+      }
+
       animationRef.current = lottie.loadAnimation({
-        container: containerRef.current,
+        container: container,
         renderer: 'svg',
         loop: true,
-        autoplay: true,
-        animationData: animationData,
+        autoplay: false,
+        // lottie-web mutates animationData internally, so always pass a deep copy.
+        animationData: cloneLottieJSON(animationData),
+        rendererSettings: {
+          preserveAspectRatio: 'xMidYMid meet',
+        },
+      });
+
+      // アニメーション読み込み完了後に再生開始
+      // 注意: フレーム位置の復元は行わない（リピーターやエクスプレッションを持つ
+      // レイヤーで内部状態が破損するため、常にフレーム0から再生する）
+      const anim = animationRef.current;
+      anim.addEventListener('DOMLoaded', () => {
+        container.style.minWidth = '';
+        container.style.minHeight = '';
+        anim.play();
       });
 
       // テキストレイヤーを抽出
       const layers = extractTextLayers(animationData);
       setTextLayers(layers);
+
+      // 色レイヤーを抽出
+      const colors = extractAllColors(animationData);
+      setColorLayers(colors);
     }
 
     return () => {
@@ -65,7 +109,7 @@ const LottieAnimation = () => {
         animationRef.current = null;
       }
     };
-  }, [animationData]);
+  }, [animationData, animationKey]);
 
   useEffect(() => {
     if (error) {
@@ -85,6 +129,7 @@ const LottieAnimation = () => {
       try {
         const json = JSON.parse(e.target?.result as string);
         if (isValidLottieJSON(json)) {
+          animationDataRef.current = json;
           setAnimationData(json);
           setError(null);
         } else {
@@ -148,6 +193,14 @@ const LottieAnimation = () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (animationRef.current as any).renderer.elements[layerIndex]?.updateDocumentData({ t: newText }, 0);
 
+      if (animationDataRef.current) {
+        animationDataRef.current = updateColorInJson(
+          animationDataRef.current,
+          ['layers', layerIndex, 't', 'd', 'k', 0, 's', 't'],
+          newText
+        ) as LottieJSON;
+      }
+
       // textLayersのstateも更新
       setTextLayers((prev) =>
         prev.map((layer) =>
@@ -156,6 +209,49 @@ const LottieAnimation = () => {
       );
     }
   }, []);
+
+  const handleUpdateColor = useCallback((
+    colorId: string,
+    path: (string | number)[],
+    newColor: LottieRGBA | string
+  ) => {
+    if (!animationRef.current) return;
+
+    // テキストレイヤーの場合はupdateDocumentData APIを使用
+    if (colorId.includes('-text')) {
+      const layerIndex = parseInt(colorId.split('-')[1]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const element = (animationRef.current as any).renderer.elements[layerIndex];
+      if (element?.updateDocumentData) {
+        element.updateDocumentData({ fc: (newColor as LottieRGBA).slice(0, 3) }, 0);
+      }
+      if (animationDataRef.current) {
+        animationDataRef.current = updateColorInJson(
+          animationDataRef.current,
+          path,
+          newColor
+        ) as LottieJSON;
+      }
+      // colorLayersのstateを更新
+      setColorLayers(prev =>
+        prev.map(layer => ({
+          ...layer,
+          colors: layer.colors.map(c =>
+            c.id === colorId ? { ...c, color: newColor as LottieRGBA } : c
+          )
+        }))
+      );
+    } else {
+      // その他のレイヤーはJSON更新 + 再ロード
+      const sourceData = animationDataRef.current ?? animationData;
+      if (!sourceData) return;
+      const updatedData = updateColorInJson(sourceData, path, newColor) as LottieJSON;
+      animationDataRef.current = updatedData;
+      // キーを更新してコンテナを強制的に再マウント（リピーター等の内部状態をリセット）
+      setAnimationKey(prev => prev + 1);
+      setAnimationData(updatedData);
+    }
+  }, [animationData]);
 
   return (
     <div className="app-container">
@@ -175,7 +271,7 @@ const LottieAnimation = () => {
         />
 
         {animationData ? (
-          <div ref={containerRef} id="lottie" />
+          <div key={animationKey} ref={containerRef} id="lottie" />
         ) : (
           <div className="drop-hint">
             <p>Lottie JSONファイルをドロップ</p>
@@ -198,6 +294,7 @@ const LottieAnimation = () => {
       {animationData && (
         <div className="side-panel">
           <TextEditor textLayers={textLayers} onUpdateText={handleUpdateText} />
+          <ColorEditor colorLayers={colorLayers} onUpdateColor={handleUpdateColor} />
         </div>
       )}
     </div>
