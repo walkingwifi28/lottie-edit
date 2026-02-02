@@ -1,5 +1,7 @@
 # Lottie Editor - プロジェクト仕様
 
+このファイルは `.claude/CLAUDE.md` の内容を AGENT 向けに共有したものです。仕様変更時は **両方を同期** してください。
+
 ## Claude Codeへの指示
 - **仕様変更時は必ずこのファイルを更新すること**
 - 機能の追加・削除・変更を行った場合、該当セクションを同期的に更新する
@@ -9,12 +11,13 @@
 
 ## 概要
 Lottie JSONアニメーションのビューアー兼編集ツール。
-ユーザーがLottieファイルをアップロードし、アニメーション内のテキストレイヤーと各種レイヤーの色をリアルタイムで編集できる。
+ユーザーがLottieファイルをアップロードし、アニメーション内のテキストレイヤー・各種レイヤーの色・画像アセットをリアルタイムで編集できる。
 
 ## 技術スタック
 - **フレームワーク**: Vite 7 + React 19 + TypeScript 5.9
 - **アニメーション**: lottie-web
 - **Lint**: ESLint 9 + typescript-eslint
+- **パッケージマネージャー**: pnpm
 
 ## ディレクトリ構造
 ```
@@ -58,6 +61,15 @@ src/
 - カラーピッカーで色を選択
 - リアルタイムでアニメーションに反映
 
+### 5. 画像差し替え（LottieAnimation.tsx）
+- `assets` 内の画像アセット（`p` を持つ要素）を検出
+- サイドパネルから差し替え対象の画像アセットを選択
+- 画像ファイル選択でData URLに変換し、`asset.p` に埋め込み
+- `asset.u = ''` / `asset.e = 1` に更新して外部ファイル依存を排除
+- 差し替え画像は元アセット枠サイズに contain で中央配置したData URLに変換して `asset.p` に埋め込み
+- 画像レイヤー（`ty: 2`）の transform（位置/アンカー/スケール）は変更しない
+- JSON更新後にアニメーションを再ロードして即時反映
+
 ## 型定義
 
 ```typescript
@@ -96,10 +108,10 @@ interface TextLayerInfo {
 
 ## コマンド
 ```bash
-npm run dev      # 開発サーバー起動
-npm run build    # プロダクションビルド（tsc -b && vite build）
-npm run lint     # ESLint実行
-npm run preview  # ビルド結果プレビュー
+pnpm dev      # 開発サーバー起動
+pnpm build    # プロダクションビルド（tsc -b && vite build）
+pnpm lint     # ESLint実行
+pnpm preview  # ビルド結果プレビュー
 ```
 
 ## 注意事項
@@ -110,4 +122,6 @@ npm run preview  # ビルド結果プレビュー
 - テキスト更新は `renderer.elements[index].updateDocumentData()` を使用
 - テキスト色の更新も `updateDocumentData({ fc: [r, g, b] })` で即時反映
 - シェイプ/ソリッドの色更新はJSON編集後にアニメーション再ロードが必要
+- 画像差し替えは `assets[n].p` をData URL化し、`assets[n].e = 1` にして再ロード
+- 画像差し替え時は元アセットの `w/h` を維持したまま `assets` の画像データのみ更新し、画像レイヤーの transform（位置/アンカー/スケール）は変更しない
 - 日本語UIを使用

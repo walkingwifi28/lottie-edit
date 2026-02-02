@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { ColorLayerInfo, ColorInfo, LottieRGBA } from '../types/lottie';
 import { lottieRGBAToHex, hexToLottieRGBA } from '../utils/colorUtils';
 
@@ -7,19 +7,20 @@ interface ColorEditorProps {
   onUpdateColor: (colorId: string, path: (string | number)[], newColor: LottieRGBA | string) => void;
 }
 
+const buildEditedColors = (colorLayers: ColorLayerInfo[]): Record<string, string> =>
+  colorLayers.reduce<Record<string, string>>((acc, layer) => {
+    layer.colors.forEach((colorInfo) => {
+      acc[colorInfo.id] = lottieRGBAToHex(colorInfo.color);
+    });
+    return acc;
+  }, {});
+
 const ColorEditor = ({ colorLayers, onUpdateColor }: ColorEditorProps) => {
   // 編集中の色を保持（colorId -> hex文字列）
-  const [editedColors, setEditedColors] = useState<Record<string, string>>({});
+  const [editedColors, setEditedColors] = useState<Record<string, string>>(() => buildEditedColors(colorLayers));
 
-  // colorLayersが変更されたら初期値を設定
   useEffect(() => {
-    const initial: Record<string, string> = {};
-    colorLayers.forEach((layer) => {
-      layer.colors.forEach((colorInfo) => {
-        initial[colorInfo.id] = lottieRGBAToHex(colorInfo.color);
-      });
-    });
-    setEditedColors(initial);
+    setEditedColors(buildEditedColors(colorLayers));
   }, [colorLayers]);
 
   const getTypeLabel = (type: string) => {

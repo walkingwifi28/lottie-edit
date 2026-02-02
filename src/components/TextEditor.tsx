@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { TextLayerInfo } from '../types/lottie';
 
 interface TextEditorProps {
@@ -6,15 +6,17 @@ interface TextEditorProps {
   onUpdateText: (index: number, newText: string) => void;
 }
 
+const buildEditedTexts = (textLayers: TextLayerInfo[]): Record<number, string> =>
+  textLayers.reduce<Record<number, string>>((acc, layer) => {
+    acc[layer.index] = layer.text;
+    return acc;
+  }, {});
+
 const TextEditor = ({ textLayers, onUpdateText }: TextEditorProps) => {
-  const [editedTexts, setEditedTexts] = useState<Record<number, string>>({});
+  const [editedTexts, setEditedTexts] = useState<Record<number, string>>(() => buildEditedTexts(textLayers));
 
   useEffect(() => {
-    const initial: Record<number, string> = {};
-    textLayers.forEach((layer) => {
-      initial[layer.index] = layer.text;
-    });
-    setEditedTexts(initial);
+    setEditedTexts(buildEditedTexts(textLayers));
   }, [textLayers]);
 
   const handleTextChange = (index: number, value: string) => {
